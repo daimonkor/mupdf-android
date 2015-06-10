@@ -1,7 +1,6 @@
 package com.artifex.mupdfdemo;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -41,7 +40,7 @@ public class ReaderView
 	private static final float MAX_SCALE        = 5.0f;
 	private static final float REFLOW_SCALE_FACTOR = 0.5f;
 
-	private static final boolean HORIZONTAL_SCROLLING = true;
+	private boolean horizontalScrolling = true;
 
 	private Adapter           mAdapter;
 	private int               mCurrent;    // Adapter's index for the current view
@@ -68,7 +67,6 @@ public class ReaderView
 	private int               mScrollerLastX;
 	private int               mScrollerLastY;
 
-    private PageView currentPage;
     private DigitalizedEventCallback eventCallback;
 
     private float             mLastTouchX;
@@ -76,6 +74,14 @@ public class ReaderView
 
 	private List<PdfBitmap> pdfBitmaps;
 	private boolean initializedPdfBitmaps;
+
+	public boolean isHorizontalScrolling() {
+		return horizontalScrolling;
+	}
+
+	public void setHorizontalScrolling(boolean horizontalScrolling) {
+		this.horizontalScrolling = horizontalScrolling;
+	}
 
 	static abstract class ViewMapper {
 		abstract void applyToView(View view);
@@ -393,7 +399,7 @@ public class ReaderView
 			Rect bounds = getScrollBounds(v);
 			switch(directionOfTravel(velocityX, velocityY)) {
 			case MOVING_LEFT:
-				if (HORIZONTAL_SCROLLING && bounds.left >= 0) {
+				if (isHorizontalScrolling() && bounds.left >= 0) {
 					// Fling off to the left bring next view onto screen
 					View vl = mChildViews.get(mCurrent+1);
 
@@ -404,7 +410,7 @@ public class ReaderView
 				}
 				break;
 			case MOVING_UP:
-				if (!HORIZONTAL_SCROLLING && bounds.top >= 0) {
+				if (!isHorizontalScrolling() && bounds.top >= 0) {
 					// Fling off to the top bring next view onto screen
 					View vl = mChildViews.get(mCurrent+1);
 
@@ -415,7 +421,7 @@ public class ReaderView
 				}
 				break;
 			case MOVING_RIGHT:
-				if (HORIZONTAL_SCROLLING && bounds.right <= 0) {
+				if (isHorizontalScrolling() && bounds.right <= 0) {
 					// Fling off to the right bring previous view onto screen
 					View vr = mChildViews.get(mCurrent-1);
 
@@ -426,7 +432,7 @@ public class ReaderView
 				}
 				break;
 			case MOVING_DOWN:
-				if (!HORIZONTAL_SCROLLING && bounds.bottom <= 0) {
+				if (!isHorizontalScrolling() && bounds.bottom <= 0) {
 					// Fling off to the bottom bring previous view onto screen
 					View vr = mChildViews.get(mCurrent-1);
 
@@ -610,7 +616,7 @@ public class ReaderView
 				cvOffset = subScreenSizeOffset(cv);
 				// cv.getRight() may be out of date with the current scale
 				// so add left to the measured width for the correct position
-				if (HORIZONTAL_SCROLLING)
+				if (isHorizontalScrolling())
 					move = cv.getLeft() + cv.getMeasuredWidth() + cvOffset.x + GAP/2 + mXScroll < getWidth()/2;
 				else
 					move = cv.getTop() + cv.getMeasuredHeight() + cvOffset.y + GAP/2 + mYScroll < getHeight()/2;
@@ -625,7 +631,7 @@ public class ReaderView
 					onMoveToChild(mCurrent);
 				}
 
-				if (HORIZONTAL_SCROLLING)
+				if (isHorizontalScrolling())
 					move = cv.getLeft() - cvOffset.x - GAP/2 + mXScroll >= getWidth()/2;
 				else
 					move = cv.getTop() - cvOffset.y - GAP/2 + mYScroll >= getHeight()/2;
@@ -685,13 +691,6 @@ public class ReaderView
 		int cvLeft, cvRight, cvTop, cvBottom;
 		boolean notPresent = (mChildViews.get(mCurrent) == null);
 		cv = getOrCreateChild(mCurrent);
-        currentPage = (PageView) cv;
-        currentPage.setEventCallback(eventCallback);
-		if (!initializedPdfBitmaps) {
-			currentPage.setPdfBitmapList(pdfBitmaps);
-			initializedPdfBitmaps = true;
-		}
-        currentPage.setParentSize(new Point(right-left, bottom-top));
 		// When the view is sub-screen-size in either dimension we
 		// offset it to center within the screen area, and to keep
 		// the views spaced out
@@ -716,13 +715,13 @@ public class ReaderView
 			cvLeft   += corr.x;
 			cvTop    += corr.y;
 			cvBottom += corr.y;
-		} else if (HORIZONTAL_SCROLLING && cv.getMeasuredHeight() <= getHeight()) {
+		} else if (isHorizontalScrolling() && cv.getMeasuredHeight() <= getHeight()) {
 			// When the current view is as small as the screen in height, clamp
 			// it vertically
 			Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
 			cvTop    += corr.y;
 			cvBottom += corr.y;
-		} else if (!HORIZONTAL_SCROLLING && cv.getMeasuredWidth() <= getWidth()) {
+		} else if (!isHorizontalScrolling() && cv.getMeasuredWidth() <= getWidth()) {
 			// When the current view is as small as the screen in width, clamp
 			// it horizontally
 			Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
@@ -735,7 +734,7 @@ public class ReaderView
 		if (mCurrent > 0) {
 			View lv = getOrCreateChild(mCurrent - 1);
 			Point leftOffset = subScreenSizeOffset(lv);
-			if (HORIZONTAL_SCROLLING)
+			if (isHorizontalScrolling())
 			{
 				int gap = leftOffset.x + GAP + cvOffset.x;
 				lv.layout(cvLeft - lv.getMeasuredWidth() - gap,
@@ -754,7 +753,7 @@ public class ReaderView
 		if (mCurrent + 1 < mAdapter.getCount()) {
 			View rv = getOrCreateChild(mCurrent + 1);
 			Point rightOffset = subScreenSizeOffset(rv);
-			if (HORIZONTAL_SCROLLING)
+			if (isHorizontalScrolling())
 			{
 				int gap = cvOffset.x + GAP + rightOffset.x;
 				rv.layout(cvRight + gap,

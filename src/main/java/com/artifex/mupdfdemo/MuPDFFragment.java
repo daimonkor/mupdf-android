@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.artifex.utils.DigitalizedEventCallback;
 import com.artifex.utils.PdfBitmap;
+import com.artifex.utils.PdfEventCallback;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -42,8 +43,6 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.ViewAnimator;
 
-import javax.crypto.Cipher;
-
 public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupport
 {
     private static final String TAG = "MuPDFFragment";
@@ -56,6 +55,26 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
     /* State restoration */
     private static final String BUNDLE_FILENAME = "savedFileName";
     private static final String BUNDLE_BUTTONS_HIDDEN = "savedButtonsHidden";
+
+	public MuPDFReaderView getmDocView() {
+		return mDocView;
+	}
+
+	public void setmDocView(MuPDFReaderView mDocView) {
+		this.mDocView = mDocView;
+	}
+
+	public PdfEventCallback getPdfEventCallback() {
+		return pdfEventCallback;
+	}
+
+	public void setPdfEventCallback(PdfEventCallback pdfEventCallback) {
+		this.pdfEventCallback = pdfEventCallback;
+	}
+
+	public MuPDFCore getCore() {
+		return core;
+	}
 
 	/* The core rendering instance */
 	enum TopBarMode {Main, Search, Annot, Delete, More, Accept};
@@ -102,6 +121,8 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	private FilePicker mFilePicker;
 	private List<PdfBitmap> pdfBitmaps;
 	private byte[] byteArrayPdf;
+
+	private PdfEventCallback pdfEventCallback;
 	
 	public void createAlertWaiter() {
 		mAlertsActive = true;
@@ -128,7 +149,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 				if (!mAlertsActive)
 					return null;
 
-				return core.waitForAlert();
+				return getCore().waitForAlert();
 			}
 
 			@Override
@@ -152,7 +173,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 							result.buttonPressed = pressed[index];
 							// Send the user's response to the core, so that it can
 							// continue processing.
-							core.replyToAlert(result);
+							getCore().replyToAlert(result);
 							// Create another alert-waiter to pick up the next alert.
 							createAlertWaiter();
 						}
@@ -196,7 +217,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 						mAlertDialog = null;
 						if (mAlertsActive) {
 							result.buttonPressed = MuPDFAlert.ButtonPressed.None;
-							core.replyToAlert(result);
+							getCore().replyToAlert(result);
 							createAlertWaiter();
 						}
 					}
@@ -239,7 +260,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			System.out.println(e);
 			return null;
 		}
-		return core;
+		return getCore();
 	}
 
     
@@ -258,7 +279,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			System.out.println(e);
 			return null;
 		}
-		return core;
+		return getCore();
 	}
 
 	/** Called when the activity is first created. */
@@ -272,21 +293,21 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
 		mAlertBuilder = new AlertDialog.Builder(mContext);
 
-		if (core == null) {
+		if (getCore() == null) {
 			core = (MuPDFCore)getActivity().getLastNonConfigurationInstance();
 
 			if (savedInstanceState != null && savedInstanceState.containsKey("FileName")) {
 				mFileName = savedInstanceState.getString("FileName");
 			}
 		}
-		if (core == null) {
+		if (getCore() == null) {
 			Intent intent = getActivity().getIntent();
 			byte buffer[] = null;
 
             boolean hasIntent = Intent.ACTION_VIEW.equals(intent.getAction());
             boolean hasArguments = getArguments() != null && getArguments().getString(PARAM_PATH_PDF) != null;
             
-			if (hasIntent || hasArguments) {
+			if (hasIntent || hasArguments || byteArrayPdf != null) {
                 Uri uri;
                 if (hasArguments) {
                     uri = Uri.parse(getArguments().getString(PARAM_PATH_PDF));
@@ -358,16 +379,16 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 				}
 				SearchTaskResult.set(null);
 			}
-			if (core != null && core.needsPassword()) {
+			if (getCore() != null && getCore().needsPassword()) {
 				requestPassword(savedInstanceState);
 				return null;
 			}
-			if (core != null && core.countPages() == 0)
+			if (getCore() != null && getCore().countPages() == 0)
 			{
 				core = null;
 			}
 		}
-		if (core == null)
+		if (getCore() == null)
 		{
 			AlertDialog alert = mAlertBuilder.create();
 			alert.setTitle(R.string.cannot_open_document);
@@ -385,6 +406,9 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 				}
 			});
 			alert.show();
+			if(pdfEventCallback != null){
+				pdfEventCallback.onLoadComplete(false);
+			}
 			return null;
 		}
 
@@ -402,7 +426,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.okay),
 				new DialogInterface.OnClickListener() {
 			public void onClick(DialogInterface dialog, int which) {
-				if (core.authenticatePassword(mPasswordView.getText().toString())) {
+				if (getCore().authenticatePassword(mPasswordView.getText().toString())) {
 					createUI(savedInstanceState, mContext);
 				} else {
 					requestPassword(savedInstanceState);
@@ -420,19 +444,19 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	}
 
 	public View createUI(Bundle savedInstanceState, final Context context) {
-		if (core == null)
+		if (getCore() == null)
 			return null;
 
 		// Now create the UI.
 		// First create the document view
-		mDocView = new MuPDFReaderView(context) {
+		setmDocView(new MuPDFReaderView(context) {
 			@Override
 			protected void onMoveToChild(int i) {
-				if (core == null)
+				if (getCore() == null)
 					return;
 				mPageNumberView.setText(String.format("%d / %d", i + 1,
-						core.countPages()));
-				mPageSlider.setMax((core.countPages() - 1) * mPageSliderRes);
+						getCore().countPages()));
+				mPageSlider.setMax((getCore().countPages() - 1) * mPageSliderRes);
 				mPageSlider.setProgress(i * mPageSliderRes);
 				super.onMoveToChild(i);
 			}
@@ -470,27 +494,27 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 					// Not in annotation editing mode, but the pageview will
 					// still select and highlight hit annotations, so
 					// deselect just in case.
-					MuPDFView pageView = (MuPDFView) mDocView.getDisplayedView();
+					MuPDFView pageView = (MuPDFView) getmDocView().getDisplayedView();
 					if (pageView != null)
 						pageView.deselectAnnotation();
 					break;
 				}
 			}
-		};
-        MuPDFPageAdapter adapter = new MuPDFPageAdapter(context, this, core);
-		mDocView.setAdapter(adapter);
-        mDocView.setEventCallback(eventCallback);
-		mDocView.setPdfBitmapList(pdfBitmaps);
+		});
+        MuPDFPageAdapter adapter = new MuPDFPageAdapter(context, this, getCore());
+		getmDocView().setAdapter(adapter);
+        getmDocView().setEventCallback(eventCallback);
+		getmDocView().setPdfBitmapList(pdfBitmaps);
 
-		mSearchTask = new SearchTask(context, core) {
+		mSearchTask = new SearchTask(context, getCore()) {
 			@Override
 			protected void onTextFound(SearchTaskResult result) {
 				SearchTaskResult.set(result);
 				// Ask the ReaderView to move to the resulting page
-				mDocView.setDisplayedViewIndex(result.pageNumber);
+				getmDocView().setDisplayedViewIndex(result.pageNumber);
 				// Make the ReaderView act on the change to SearchTaskResult
 				// via overridden onChildSetup method.
-				mDocView.resetupChildren();
+				getmDocView().resetupChildren();
 			}
 		};
 
@@ -499,7 +523,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		makeButtonsView();
 
 		// Set up the page slider
-		int smax = Math.max(core.countPages()-1,1);
+		int smax = Math.max(getCore().countPages()-1,1);
 		mPageSliderRes = ((10 + smax - 1)/smax) * 2;
 
 		// Set the file-name text
@@ -508,7 +532,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		// Activate the seekbar
 		mPageSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 			public void onStopTrackingTouch(SeekBar seekBar) {
-				mDocView.setDisplayedViewIndex((seekBar.getProgress()+mPageSliderRes/2)/mPageSliderRes);
+				getmDocView().setDisplayedViewIndex((seekBar.getProgress() + mPageSliderRes / 2) / mPageSliderRes);
 			}
 
 			public void onStartTrackingTouch(SeekBar seekBar) {}
@@ -533,7 +557,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			}
 		});
 
-		if (core.fileFormat().startsWith("PDF") && core.isUnencryptedPDF() && !core.wasOpenedFromBuffer())
+		if (getCore().fileFormat().startsWith("PDF") && getCore().isUnencryptedPDF() && !getCore().wasOpenedFromBuffer())
 		{
 			mAnnotButton.setOnClickListener(new View.OnClickListener() {
 				public void onClick(View v) {
@@ -564,7 +588,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 				// Remove any previous search results
 				if (SearchTaskResult.get() != null && !mSearchText.getText().toString().equals(SearchTaskResult.get().txt)) {
 					SearchTaskResult.set(null);
-					mDocView.resetupChildren();
+					getmDocView().resetupChildren();
 				}
 			}
 			public void beforeTextChanged(CharSequence s, int start, int count,
@@ -608,10 +632,10 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			}
 		});
 
-		if (core.hasOutline()) {
+		if (getCore().hasOutline()) {
 			mOutlineButton.setOnClickListener(new View.OnClickListener() {
 				public void onClick(View v) {
-					OutlineItem outline[] = core.getOutline();
+					OutlineItem outline[] = getCore().getOutline();
 					if (outline != null) {
 						OutlineActivityData.get().items = outline;
 						Intent intent = new Intent(context, OutlineActivity.class);
@@ -627,7 +651,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		SharedPreferences prefs = getActivity().getPreferences(Context.MODE_PRIVATE);
         int lastPage = prefs.getInt("page"+mFileName, 0);
 //        mDocView.setDisplayedViewIndex(lastPage);
-		mDocView.setDisplayedViewIndex(0);
+		getmDocView().setDisplayedViewIndex(0);
 
 		if (savedInstanceState == null || !savedInstanceState.getBoolean("ButtonsHidden", false))
 			showButtons();
@@ -640,7 +664,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
 		// Stick the document view and the buttons overlay into a parent view
 		RelativeLayout layout = new RelativeLayout(context);
-		layout.addView(mDocView);
+		layout.addView(getmDocView());
 		layout.addView(mButtonsView);
 
         if (getArguments() != null && getArguments().getBoolean(PARAM_SHOW_CONTROLS)) {
@@ -652,13 +676,17 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
         // Performs tap event to refresh view.
         Handler handler = new Handler();
         handler.postDelayed(runnable, msRedraw);
-        
-        return layout;
+
+		if(pdfEventCallback != null){
+			pdfEventCallback.onLoadComplete(true);
+		}
+
+		return layout;
 	}
 
 	public Object onRetainNonConfigurationInstance()
 	{
-		MuPDFCore mycore = core;
+		MuPDFCore mycore = getCore();
 		core = null;
 		return mycore;
 	}
@@ -666,14 +694,14 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	private void reflowModeSet(boolean reflow)
 	{
 		mReflow = reflow;
-		mDocView.setAdapter(mReflow ? new MuPDFReflowAdapter(mContext, core) : new MuPDFPageAdapter(getActivity(), this, core));
+		getmDocView().setAdapter(mReflow ? new MuPDFReflowAdapter(mContext, getCore()) : new MuPDFPageAdapter(getActivity(), this, getCore()));
 		mReflowButton.setColorFilter(mReflow ? Color.argb(0xFF, 172, 114, 37) : Color.argb(0xFF, 255, 255, 255));
 		setButtonEnabled(mAnnotButton, !reflow);
 		setButtonEnabled(mSearchButton, !reflow);
 		if (reflow) setLinkHighlight(false);
 		setButtonEnabled(mLinkButton, !reflow);
 		setButtonEnabled(mMoreButton, !reflow);
-		mDocView.refresh(mReflow);
+		getmDocView().refresh(mReflow);
 	}
 
 	private void toggleReflow() {
@@ -685,7 +713,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	public void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
 
-		if (mFileName != null && mDocView != null) {
+		if (mFileName != null && getmDocView() != null) {
 			outState.putString("FileName", mFileName);
 
 			// Store current page in the prefs against the file name,
@@ -694,7 +722,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			// so it can go in the bundle
 			SharedPreferences prefs = getActivity().getPreferences(Context.MODE_PRIVATE);
 			SharedPreferences.Editor edit = prefs.edit();
-			edit.putInt("page"+mFileName, mDocView.getDisplayedViewIndex());
+			edit.putInt("page"+mFileName, getmDocView().getDisplayedViewIndex());
 			edit.commit();
 		}
 
@@ -715,25 +743,25 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		if (mSearchTask != null)
 			mSearchTask.stop();
 
-		if (mFileName != null && mDocView != null) {
+		if (mFileName != null && getmDocView() != null) {
 			SharedPreferences prefs = getActivity().getPreferences(Context.MODE_PRIVATE);
 			SharedPreferences.Editor edit = prefs.edit();
-			edit.putInt("page"+mFileName, mDocView.getDisplayedViewIndex());
+			edit.putInt("page"+mFileName, getmDocView().getDisplayedViewIndex());
 			edit.commit();
 		}
 	}
 
 	public void onDestroy()
 	{
-		if (mDocView != null) {
-			mDocView.applyToChildren(new ReaderView.ViewMapper() {
+		if (getmDocView() != null) {
+			getmDocView().applyToChildren(new ReaderView.ViewMapper() {
 				void applyToView(View view) {
 					((MuPDFView) view).releaseBitmaps();
 				}
 			});
 		}
-		if (core != null)
-			core.onDestroy();
+		if (getCore() != null)
+			getCore().onDestroy();
 		if (mAlertTask != null) {
 			mAlertTask.cancel(true);
 			mAlertTask = null;
@@ -752,18 +780,18 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		// LINK_COLOR tint
 		mLinkButton.setColorFilter(highlight ? Color.argb(0xFF, 172, 114, 37) : Color.argb(0xFF, 255, 255, 255));
 		// Inform pages of the change.
-		mDocView.setLinksEnabled(highlight);
+		getmDocView().setLinksEnabled(highlight);
 	}
 
 	private void showButtons() {
-		if (core == null)
+		if (getCore() == null)
 			return;
 		if (!mButtonsVisible) {
 			mButtonsVisible = true;
 			// Update page number text and slider
-			int index = mDocView.getDisplayedViewIndex();
+			int index = getmDocView().getDisplayedViewIndex();
 			updatePageNumView(index);
-			mPageSlider.setMax((core.countPages()-1)*mPageSliderRes);
+			mPageSlider.setMax((getCore().countPages()-1)*mPageSliderRes);
 			mPageSlider.setProgress(index * mPageSliderRes);
 			if (mTopBarMode == TopBarMode.Search) {
 				mSearchText.requestFocus();
@@ -848,18 +876,18 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			SearchTaskResult.set(null);
 			// Make the ReaderView act on the change to mSearchTaskResult
 			// via overridden onChildSetup method.
-			mDocView.resetupChildren();
+			getmDocView().resetupChildren();
 		}
 	}
 
 	private void updatePageNumView(int index) {
-		if (core == null)
+		if (getCore() == null)
 			return;
-		mPageNumberView.setText(String.format("%d / %d", index + 1, core.countPages()));
+		mPageNumberView.setText(String.format("%d / %d", index + 1, getCore().countPages()));
 	}
 
 	private void printDoc() {
-		if (!core.fileFormat().startsWith("PDF")) {
+		if (!getCore().fileFormat().startsWith("PDF")) {
 			showInfo(getString(R.string.format_currently_not_supported));
 			return;
 		}
@@ -937,7 +965,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		mTopBarMode = TopBarMode.Accept;
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
 		mAcceptMode = AcceptMode.CopyText;
-		mDocView.setMode(MuPDFReaderView.Mode.Selecting);
+		getmDocView().setMode(MuPDFReaderView.Mode.Selecting);
 		mAnnotTypeText.setText(getString(R.string.copy_text));
 		showInfo(getString(R.string.select_text));
 	}
@@ -956,7 +984,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		mTopBarMode = TopBarMode.Accept;
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
 		mAcceptMode = AcceptMode.Highlight;
-		mDocView.setMode(MuPDFReaderView.Mode.Selecting);
+		getmDocView().setMode(MuPDFReaderView.Mode.Selecting);
 		mAnnotTypeText.setText(R.string.highlight);
 		showInfo(getString(R.string.select_text));
 	}
@@ -965,7 +993,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		mTopBarMode = TopBarMode.Accept;
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
 		mAcceptMode = AcceptMode.Underline;
-		mDocView.setMode(MuPDFReaderView.Mode.Selecting);
+		getmDocView().setMode(MuPDFReaderView.Mode.Selecting);
 		mAnnotTypeText.setText(R.string.underline);
 		showInfo(getString(R.string.select_text));
 	}
@@ -974,7 +1002,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		mTopBarMode = TopBarMode.Accept;
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
 		mAcceptMode = AcceptMode.StrikeOut;
-		mDocView.setMode(MuPDFReaderView.Mode.Selecting);
+		getmDocView().setMode(MuPDFReaderView.Mode.Selecting);
 		mAnnotTypeText.setText(R.string.strike_out);
 		showInfo(getString(R.string.select_text));
 	}
@@ -983,18 +1011,18 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 		mTopBarMode = TopBarMode.Accept;
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
 		mAcceptMode = AcceptMode.Ink;
-		mDocView.setMode(MuPDFReaderView.Mode.Drawing);
+		getmDocView().setMode(MuPDFReaderView.Mode.Drawing);
 		mAnnotTypeText.setText(R.string.ink);
 		showInfo(getString(R.string.draw_annotation));
 	}
 
 	public void OnCancelAcceptButtonClick(View v) {
-		MuPDFView pageView = (MuPDFView) mDocView.getDisplayedView();
+		MuPDFView pageView = (MuPDFView) getmDocView().getDisplayedView();
 		if (pageView != null) {
 			pageView.deselectText();
 			pageView.cancelDraw();
 		}
-		mDocView.setMode(MuPDFReaderView.Mode.Viewing);
+		getmDocView().setMode(MuPDFReaderView.Mode.Viewing);
 		switch (mAcceptMode) {
 		case CopyText:
 			mTopBarMode = TopBarMode.More;
@@ -1007,7 +1035,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	}
 
 	public void OnAcceptButtonClick(View v) {
-		MuPDFView pageView = (MuPDFView) mDocView.getDisplayedView();
+		MuPDFView pageView = (MuPDFView) getmDocView().getDisplayedView();
 		boolean success = false;
 		switch (mAcceptMode) {
 		case CopyText:
@@ -1050,7 +1078,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			break;
 		}
 		mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
-		mDocView.setMode(MuPDFReaderView.Mode.Viewing);
+		getmDocView().setMode(MuPDFReaderView.Mode.Viewing);
 	}
 
 	public void OnCancelSearchButtonClick(View v) {
@@ -1058,7 +1086,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	}
 
 	public void OnDeleteButtonClick(View v) {
-		MuPDFView pageView = (MuPDFView) mDocView.getDisplayedView();
+		MuPDFView pageView = (MuPDFView) getmDocView().getDisplayedView();
 		if (pageView != null)
 			pageView.deleteSelectedAnnotation();
 		mTopBarMode = TopBarMode.Annot;
@@ -1066,7 +1094,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	}
 
 	public void OnCancelDeleteButtonClick(View v) {
-		MuPDFView pageView = (MuPDFView) mDocView.getDisplayedView();
+		MuPDFView pageView = (MuPDFView) getmDocView().getDisplayedView();
 		if (pageView != null)
 			pageView.deselectAnnotation();
 		mTopBarMode = TopBarMode.Annot;
@@ -1087,17 +1115,25 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
 	public void search(int direction) {
 		hideKeyboard();
-		int displayPage = mDocView.getDisplayedViewIndex();
+		int displayPage = getmDocView().getDisplayedViewIndex();
 		SearchTaskResult r = SearchTaskResult.get();
 		int searchPage = r != null ? r.pageNumber : -1;
 		mSearchTask.go(mSearchText.getText().toString(), direction, displayPage, searchPage);
 	}
 
+	public void search(String text, int direction) {
+		//hideKeyboard();
+		int displayPage = getmDocView().getDisplayedViewIndex();
+		SearchTaskResult r = SearchTaskResult.get();
+		int searchPage = r != null ? r.pageNumber : -1;
+		mSearchTask.go(text, direction, displayPage, searchPage);
+	}
+
 	@Override
 	public void onStart() {
-		if (core != null)
+		if (getCore() != null)
 		{
-			core.startAlerts();
+			getCore().startAlerts();
 			createAlertWaiter();
 		}
 
@@ -1106,10 +1142,10 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
 	@Override
 	public void onStop() {
-		if (core != null)
+		if (getCore() != null)
 		{
 			destroyAlertWaiter();
-			core.stopAlerts();
+			getCore().stopAlerts();
 		}
 
 		super.onStop();
@@ -1173,8 +1209,8 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
     }
 
     public void addBitmap(PdfBitmap pdfBitmap) {
-        if (mDocView != null) {
-            mDocView.addBitmap(pdfBitmap);
+        if (getmDocView() != null) {
+            getmDocView().addBitmap(pdfBitmap);
         } else {
             Log.e(TAG, "Couldn't add Bitmap. DocView is NULL.");
         }
@@ -1185,8 +1221,8 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 	}
 
 	public List<PdfBitmap> getBitmapList() {
-		if (mDocView != null) {
-			return mDocView.getBitmapList();
+		if (getmDocView() != null) {
+			return getmDocView().getBitmapList();
 		} else {
 			Log.e(TAG, "Couldn't get bitmap list. DocView is NULL.");
 			return new ArrayList<>();
@@ -1195,9 +1231,9 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
     public boolean removeBitmapOnPosition(float x, float y) {
         boolean removed = false;
-        if (mDocView != null) {
+        if (getmDocView() != null) {
             Point point = new Point((int)x, (int)y);
-            removed = mDocView.removeBitmapOnPosition(point);
+            removed = getmDocView().removeBitmapOnPosition(point);
         } else {
             Log.e(TAG, "Couldn't remove Bitmap. DocView is NULL.");
         }
@@ -1216,7 +1252,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
     public boolean checkSign(){
 
-        MuPDFPageAdapter adapter = (MuPDFPageAdapter)mDocView.getAdapter();
+        MuPDFPageAdapter adapter = (MuPDFPageAdapter) getmDocView().getAdapter();
         if (adapter.getNumSignature() > 0 || !mDoSign) {
             return true;
         } else {
@@ -1235,8 +1271,8 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 
     public void setEventCallback(DigitalizedEventCallback eventCallback) {
         this.eventCallback = eventCallback;
-        if (mDocView != null) {
-            mDocView.setEventCallback(eventCallback);
+        if (getmDocView() != null) {
+            getmDocView().setEventCallback(eventCallback);
         }
     }
 
@@ -1257,9 +1293,9 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
     private final int msRedraw = 500;
 
     private void redrawTouch(){
-        if (mDocView != null) {
+        if (getmDocView() != null) {
             // Dispatch touch event to view
-            mDocView.refreshView();
+            getmDocView().refreshView();
         }
     }
 }
