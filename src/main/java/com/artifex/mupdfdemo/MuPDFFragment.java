@@ -365,7 +365,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 						alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.dismiss),
 								new DialogInterface.OnClickListener() {
 									public void onClick(DialogInterface dialog, int which) {
-										getActivity().finish();
+
 									}
 								});
 						alert.show();
@@ -395,20 +395,17 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 			alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.dismiss),
 					new DialogInterface.OnClickListener() {
 						public void onClick(DialogInterface dialog, int which) {
-							getActivity().finish();
+
 						}
 					});
 			alert.setOnCancelListener(new OnCancelListener() {
 
 				@Override
 				public void onCancel(DialogInterface dialog) {
-					getActivity().finish();
+
 				}
 			});
 			alert.show();
-			if(pdfEventCallback != null){
-				pdfEventCallback.onLoadComplete(false);
-			}
 			return null;
 		}
 
@@ -437,7 +434,7 @@ public class MuPDFFragment extends Fragment implements FilePicker.FilePickerSupp
 				new DialogInterface.OnClickListener() {
 
 			public void onClick(DialogInterface dialog, int which) {
-				getActivity().finish();
+
 			}
 		});
 		alert.show();

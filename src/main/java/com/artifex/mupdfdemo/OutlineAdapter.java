@@ -8,7 +8,7 @@ import android.widget.TextView;
 
 public class OutlineAdapter extends BaseAdapter {
 	private final OutlineItem    mItems[];
-	private final LayoutInflater mInflater;
+	protected final LayoutInflater mInflater;
 	public OutlineAdapter(LayoutInflater inflater, OutlineItem items[]) {
 		mInflater = inflater;
 		mItems    = items;
@@ -19,7 +19,7 @@ public class OutlineAdapter extends BaseAdapter {
 	}
 
 	public Object getItem(int arg0) {
-		return null;
+		return mItems[arg0];
 	}
 
 	public long getItemId(int arg0) {
